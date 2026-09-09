@@ -47,17 +47,17 @@ if [ -f "$TS_FILE" ]; then
     echo "tailscale has been fixed!"
 fi
 
-# 配置TurboACC
-if [ -d "$GITHUB_WORKSPACE/openwrt" ]; then
-    echo " "
-    # CURRENT_PLATFORM="${WRT_CONFIG:-Unknown}"
-    # SFE_PARAM=""
-    # [[ ! "$CURRENT_PLATFORM" =~ (IPQ|Mt798|MTK|Qualcomm|Ramips) ]] && SFE_PARAM="--no-sfe"
+# # 配置TurboACC
+# if [ -d "$GITHUB_WORKSPACE/openwrt" ]; then
+#     echo " "
+#     # CURRENT_PLATFORM="${WRT_CONFIG:-Unknown}"
+#     # SFE_PARAM=""
+#     # [[ ! "$CURRENT_PLATFORM" =~ (IPQ|Mt798|MTK|Qualcomm|Ramips) ]] && SFE_PARAM="--no-sfe"
 
-    cd "$GITHUB_WORKSPACE/openwrt"
-    # curl -sSL https://raw.githubusercontent.com/chenmozhijin/turboacc/luci/add_turboacc.sh -o add_turboacc.sh
-    curl -sSL https://raw.githubusercontent.com/mufeng05/turboacc/main/add_turboacc.sh -o add_turboacc.sh
-    [ -f "add_turboacc.sh" ] && bash add_turboacc.sh $SFE_PARAM
-    rm -f add_turboacc.sh
-    cd $PKG_PATH && echo "turboacc has been fixed!"
-fi
+#     cd "$GITHUB_WORKSPACE/openwrt"
+#     # curl -sSL https://raw.githubusercontent.com/chenmozhijin/turboacc/luci/add_turboacc.sh -o add_turboacc.sh
+#     curl -sSL https://raw.githubusercontent.com/mufeng05/turboacc/main/add_turboacc.sh -o add_turboacc.sh
+#     [ -f "add_turboacc.sh" ] && bash add_turboacc.sh $SFE_PARAM
+#     rm -f add_turboacc.sh
+#     cd $PKG_PATH && echo "turboacc has been fixed!"
+# fi
