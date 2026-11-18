@@ -109,7 +109,8 @@ class ShellTests(unittest.TestCase):
             path = Path(tmp) / "target/linux/mediatek/dts/mt7981b-cudy-tr3000-v1.dts"
             path.parent.mkdir(parents=True)
             subprocess.run(["git", "init", "-q", tmp], check=True)
-            path.write_text("\n" * 18 + "\tmediatek,bmt-max-ratio = <1>;\n\tmediatek,bmt-max-reserved-blocks = <64>;\n};\n&ubi {\n\treg = <0x5c0000 0x4000000>;\n};\n")
+            # Keep this context faithful to the official v25.12.2 DTS.
+            path.write_text("\n" * 18 + "\tmediatek,bmt-max-ratio = <1>;\n\tmediatek,bmt-max-reserved-blocks = <64>;\n};\n\n&ubi {\n\treg = <0x5c0000 0x4000000>;\n};\n")
             def apply(*args):
                 return subprocess.run(["git", "apply", *args, str(patch)], cwd=tmp, capture_output=True)
             self.assertEqual(apply("--check").returncode, 0)

@@ -10,6 +10,7 @@
 
 1. 打开仓库的 **Actions** 页面，选择 **AutoBuild**。
 2. 点击 **Run workflow**，根据需要调整选项：
+   - **TARGET**：选择两个平台（`all`）、仅 `X86_64`，或仅 `MediaTek_Mt798X`（Cudy TR3000 v1）。
    - **PROXY**：选择 `nikki`、`openclash` 或 `momo`，默认为 `nikki`。每次只编译选中的一个。
    - **CONFIG_ONLY**：打开后只检查配置，不编译固件。升级源码或调整配置后，可以先用它检查。
    - **PACKAGE**：可选的额外编译配置，每行填写一项，例如 `CONFIG_PACKAGE_htop=y`。

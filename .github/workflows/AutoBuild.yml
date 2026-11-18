@@ -5,6 +5,12 @@ on:
     - cron: '0 22 * * *'
   workflow_dispatch:
     inputs:
+      TARGET:
+        description: '选择构建平台'
+        required: true
+        type: choice
+        default: all
+        options: [all, X86_64, MediaTek_Mt798X]
       PROXY:
         description: '选择固件内置的代理插件'
         required: true
@@ -39,7 +45,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        CONFIG: [X86_64, MediaTek_Mt798X]
+        CONFIG: ${{ fromJSON(inputs.TARGET == 'X86_64' && '["X86_64"]' || inputs.TARGET == 'MediaTek_Mt798X' && '["MediaTek_Mt798X"]' || '["X86_64","MediaTek_Mt798X"]') }}
     uses: ./.github/workflows/OpenWrt-CI.yml
     with:
       WRT_CONFIG: ${{ matrix.CONFIG }}
