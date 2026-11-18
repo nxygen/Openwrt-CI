@@ -77,6 +77,43 @@ class ShellTests(unittest.TestCase):
         return subprocess.run([self.bash, "-c", script], cwd=cwd, env=env,
                               text=True, capture_output=True)
 
+    def test_turboacc_preserves_native_fullcone_patches(self):
+        originals = [
+            "package/network/utils/nftables/patches/002-nftables-add-fullcone-expression-support.patch",
+            "package/libs/libnftnl/patches/001-libnftnl-add-fullcone-expression-support.patch",
+            "package/network/config/firewall4/patches/001-firewall4-add-support-for-fullcone-nat.patch",
+        ]
+        duplicate = "package/network/utils/nftables/patches/100-nftables-add-fullcone-expression-support.patch"
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            root = Path(tmp)
+            subprocess.run(["git", "init", "-q", tmp], check=True)
+            for name in originals:
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("original " + name, encoding="utf-8")
+            subprocess.run(["git", "-C", tmp, "add", "."], check=True, capture_output=True)
+            subprocess.run(["git", "-C", tmp, "-c", "user.name=Test", "-c",
+                            "user.email=test@example.invalid", "-c", "commit.gpgsign=false",
+                            "commit", "-qm", "test"], check=True, capture_output=True)
+            for name in originals:
+                (root / name).write_text("overwritten", encoding="utf-8")
+            (root / duplicate).write_text("duplicate", encoding="utf-8")
+            result = subprocess.run([self.bash, str(ROOT / "Scripts/reconcile_turboacc.sh"),
+                                     root.as_posix()], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for name in originals:
+                self.assertEqual((root / name).read_text(encoding="utf-8"), "original " + name)
+            self.assertFalse((root / duplicate).exists())
+            (root / duplicate).write_text("new native patch", encoding="utf-8")
+            subprocess.run(["git", "-C", tmp, "add", duplicate], check=True, capture_output=True)
+            subprocess.run(["git", "-C", tmp, "-c", "user.name=Test", "-c",
+                            "user.email=test@example.invalid", "-c", "commit.gpgsign=false",
+                            "commit", "-qm", "new native patch"], check=True, capture_output=True)
+            result = subprocess.run([self.bash, str(ROOT / "Scripts/reconcile_turboacc.sh"),
+                                     root.as_posix()], capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertTrue((root / duplicate).exists())
+
     def test_proxy_choices(self):
         text = (ROOT / "Scripts/Settings.sh").read_text(encoding="utf-8")
         block = text[text.index('case "${WRT_PROXY:-nikki}"'):text.index("# #编译器优化")]

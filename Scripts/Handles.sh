@@ -76,6 +76,7 @@ if text.count(old) != 1:
 p.write_text(text.replace(old, new))
 PY
     [ -f "add_turboacc.sh" ] && bash add_turboacc.sh $SFE_PARAM
+    bash "$GITHUB_WORKSPACE/Scripts/reconcile_turboacc.sh" "$GITHUB_WORKSPACE/openwrt"
     rm -f add_turboacc.sh
     cd $PKG_PATH && echo "turboacc has been fixed!"
 fi
