@@ -1,0 +1,52 @@
+#!/bin/sh
+# TR3000 only: use generated radio/iface sections and identify the band explicitly.
+. /lib/functions.sh
+. /lib/functions/system.sh
+[ "$(board_name)" = "cudy,tr3000-v1" ] || exit 0
+ssid=__SSID_SHELL__
+password=__PASSWORD_SHELL__
+radio_2g=
+radio_5g=
+find_radio() {
+    local section="$1" band
+    config_get band "$section" band
+    case "$band" in
+        2g) [ -z "$radio_2g" ] && radio_2g="$section" || radio_2g=ambiguous ;;
+        5g) [ -z "$radio_5g" ] && radio_5g="$section" || radio_5g=ambiguous ;;
+    esac
+}
+iface_2g=
+iface_5g=
+find_iface() {
+    local section="$1" device mode
+    config_get device "$section" device
+    config_get mode "$section" mode
+    [ "$mode" = ap ] || return 0
+    if [ "$device" = "$radio_2g" ]; then
+        [ -z "$iface_2g" ] && iface_2g="$section" || iface_2g=ambiguous
+    elif [ "$device" = "$radio_5g" ]; then
+        [ -z "$iface_5g" ] && iface_5g="$section" || iface_5g=ambiguous
+    fi
+}
+config_load wireless || exit 1
+config_foreach find_radio wifi-device
+case "$radio_2g:$radio_5g" in
+    :*|*:|*ambiguous*) logger -t tr3000-wifi "Cannot identify both radio bands; leaving Wi-Fi unchanged"; exit 0 ;;
+esac
+config_foreach find_iface wifi-iface
+case "$iface_2g:$iface_5g" in
+    :*|*:|*ambiguous*) logger -t tr3000-wifi "Cannot identify both AP interfaces; leaving Wi-Fi unchanged"; exit 0 ;;
+esac
+for radio in "$radio_2g" "$radio_5g"; do
+    uci set "wireless.$radio.disabled=0" && uci set "wireless.$radio.country=CN" || exit 1
+done
+for iface in "$iface_2g" "$iface_5g"; do
+    name="$ssid"
+    [ "$iface" = "$iface_5g" ] && name="${ssid}_5GHz"
+    uci set "wireless.$iface.network=lan" && \
+    uci set "wireless.$iface.ssid=$name" && \
+    uci set "wireless.$iface.encryption=psk2" && \
+    uci set "wireless.$iface.key=$password" || exit 1
+done
+uci commit wireless || exit 1
+exit 0

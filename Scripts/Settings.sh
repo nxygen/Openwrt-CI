@@ -22,6 +22,20 @@ if [ -n "$WRT_PACKAGE" ]; then
 	echo -e "$WRT_PACKAGE" >> ./.config
 fi
 
+# 代理插件互斥；手动附加配置也不能覆盖此选择。
+case "${WRT_PROXY:-nikki}" in
+	nikki|openclash|momo) ;;
+	*) echo "Unsupported proxy: $WRT_PROXY" >&2; exit 1 ;;
+esac
+sed -i '/^CONFIG_PACKAGE_luci-app-\(nikki\|openclash\|momo\)=/d; /^# CONFIG_PACKAGE_luci-app-\(nikki\|openclash\|momo\) is not set$/d' ./.config
+for proxy in nikki openclash momo; do
+	if [ "$proxy" = "${WRT_PROXY:-nikki}" ]; then
+		echo "CONFIG_PACKAGE_luci-app-$proxy=y" >> ./.config
+	else
+		echo "# CONFIG_PACKAGE_luci-app-$proxy is not set" >> ./.config
+	fi
+done
+
 # #编译器优化
 # if [[ $WRT_TARGET != *"X86"* ]]; then
 # 	echo "CONFIG_TARGET_OPTIONS=y" >> ./.config

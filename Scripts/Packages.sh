@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 #安装和更新软件包
 UPDATE_PACKAGE() {
@@ -36,7 +37,13 @@ UPDATE_PACKAGE() {
 	done
 
 	# 克隆 GitHub 仓库
-	git clone --depth=1 --single-branch --branch $PKG_BRANCH "https://github.com/$PKG_REPO.git"
+	local PKG_COMMIT
+	PKG_COMMIT=$(python3 -c 'import json,os,sys; p=json.loads(os.environ["WRT_LOCK"])["packages"]; print(next(x["commit"] for x in p.values() if x["repo"] == sys.argv[1]))' "$PKG_REPO")
+	git init -q "$REPO_NAME" || return 1
+	git -C "$REPO_NAME" remote add origin "https://github.com/$PKG_REPO.git" || return 1
+	git -C "$REPO_NAME" fetch -q --depth=1 origin "$PKG_COMMIT" || return 1
+	git -C "$REPO_NAME" checkout -q --detach FETCH_HEAD || return 1
+	test "$(git -C "$REPO_NAME" rev-parse HEAD)" = "$PKG_COMMIT" || return 1
 
 	# 处理克隆的仓库
 	if [[ $PKG_SPECIAL == "pkg" ]]; then
@@ -60,11 +67,15 @@ UPDATE_PACKAGE "aurora" "eamonxg/luci-theme-aurora" "master"
 UPDATE_PACKAGE "aurora-config" "eamonxg/luci-app-aurora-config" "master"
 
 
-UPDATE_PACKAGE "luci-app-openclash" "vernesong/OpenClash" "master"
-UPDATE_PACKAGE "luci-app-nikki" "nikkinikki-org/OpenWrt-nikki" "main"
+case "${WRT_PROXY:-nikki}" in
+	nikki) UPDATE_PACKAGE "luci-app-nikki" "nikkinikki-org/OpenWrt-nikki" "main" || exit 1 ;;
+	openclash) UPDATE_PACKAGE "luci-app-openclash" "vernesong/OpenClash" "master" || exit 1 ;;
+	momo) UPDATE_PACKAGE "luci-app-momo" "nikkinikki-org/OpenWrt-momo" "main" || exit 1 ;;
+	*) echo "Unsupported proxy: $WRT_PROXY" >&2; exit 1 ;;
+esac
 
 UPDATE_PACKAGE "fastfetch-openwrt" "ntbowen/fastfetch-openwrt" "main"
-UPDATE_PACKAGE "luci-app-poweroffdevice" "sirpdboy/luci-app-poweroffdevice" "main"
+UPDATE_PACKAGE "luci-app-poweroffdevice" "sirpdboy/luci-app-poweroffdevice" "master"
 UPDATE_PACKAGE "luci-app-tailscale" "asvow/luci-app-tailscale" "main"
 UPDATE_PACKAGE "luci-app-easytier" "EasyTier/luci-app-easytier" "main"
 

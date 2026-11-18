@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 # 确保 PKG_PATH 准确
 PKG_PATH="$GITHUB_WORKSPACE/openwrt/package"
@@ -56,7 +57,24 @@ if [ -d "$GITHUB_WORKSPACE/openwrt" ]; then
 
     cd "$GITHUB_WORKSPACE/openwrt"
     # curl -sSL https://raw.githubusercontent.com/chenmozhijin/turboacc/luci/add_turboacc.sh -o add_turboacc.sh
-    curl -sSL https://raw.githubusercontent.com/mufeng05/turboacc/main/add_turboacc.sh -o add_turboacc.sh
+    TURBOACC_COMMIT=$(python3 -c 'import json,os; print(json.loads(os.environ["WRT_LOCK"])["packages"]["turboacc"]["commit"])')
+    export TURBOACC_COMMIT
+    curl -fsSL "https://raw.githubusercontent.com/mufeng05/turboacc/$TURBOACC_COMMIT/add_turboacc.sh" -o add_turboacc.sh
+    # The upstream entrypoint clones its own moving main branch. Pin that clone too.
+    python3 - <<'PY'
+from pathlib import Path
+p = Path("add_turboacc.sh")
+text = p.read_text()
+old = 'git clone --depth=1 --single-branch https://github.com/mufeng05/turboacc "$TMPDIR/turboacc" || exit 1'
+new = '''git init -q "$TMPDIR/turboacc" &&
+git -C "$TMPDIR/turboacc" remote add origin https://github.com/mufeng05/turboacc &&
+git -C "$TMPDIR/turboacc" fetch -q --depth=1 origin "$TURBOACC_COMMIT" &&
+git -C "$TMPDIR/turboacc" checkout -q --detach FETCH_HEAD &&
+test "$(git -C "$TMPDIR/turboacc" rev-parse HEAD)" = "$TURBOACC_COMMIT" || exit 1'''
+if text.count(old) != 1:
+    raise SystemExit("TurboACC clone command changed; review its source before building")
+p.write_text(text.replace(old, new))
+PY
     [ -f "add_turboacc.sh" ] && bash add_turboacc.sh $SFE_PARAM
     rm -f add_turboacc.sh
     cd $PKG_PATH && echo "turboacc has been fixed!"

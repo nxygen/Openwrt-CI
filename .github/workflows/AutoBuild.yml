@@ -1,57 +1,55 @@
-#CI项目
 name: AutoBuild
-
-#CI计划
 on:
   push:
-  #自动编译：当AutoClean运行完成后
-  workflow_run:
-    workflows: ["AutoClean"]
-    types:
-      - completed
-  #手动编译
+  schedule:
+    - cron: '0 22 * * *'
   workflow_dispatch:
     inputs:
+      PROXY:
+        description: '选择固件内置的代理插件'
+        required: true
+        type: choice
+        default: nikki
+        options: [nikki, openclash, momo]
+      CONFIG_ONLY:
+        description: '仅检查配置，不编译固件'
+        required: true
+        type: boolean
+        default: false
       PACKAGE:
-        description: '手动调整插件包，多个请用\n符号隔开。'
+        description: '附加配置，每行一项'
         required: false
         type: string
-
-#CI权限
-permissions: write-all
-
-#CI任务
+permissions:
+  contents: read
 jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    outputs:
+      lock: ${{ steps.sources.outputs.lock }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - id: sources
+        env:
+          WRT_PROXY: ${{ inputs.PROXY || 'nikki' }}
+        run: python3 Scripts/resolve_sources.py
   config:
-    name: ${{matrix.CONFIG}}
+    needs: resolve
+    name: ${{ matrix.CONFIG }}
     strategy:
       fail-fast: false
       matrix:
-        CONFIG: [X86_64,MediaTek_Mt798X] #编译配置文件列表
-        SOURCE: [immortalwrt/immortalwrt] #
-        BRANCH: [openwrt-25.12] #25.12分支
-
+        CONFIG: [X86_64, MediaTek_Mt798X]
     uses: ./.github/workflows/OpenWrt-CI.yml
     with:
-      #编译配置
-      WRT_CONFIG: ${{matrix.CONFIG}}
-      #默认主题
+      WRT_CONFIG: ${{ matrix.CONFIG }}
+      WRT_LOCK: ${{ needs.resolve.outputs.lock }}
+      WRT_PROXY: ${{ inputs.PROXY || 'nikki' }}
+      WRT_TEST: ${{ inputs.CONFIG_ONLY || false }}
+      WRT_PACKAGE: ${{ inputs.PACKAGE || '' }}
       WRT_THEME: aurora
-      #默认主机名
       WRT_NAME: OpenWrt
-      #默认地址
       WRT_IP: 192.168.31.1
-      #源码链接
-      WRT_REPO: https://github.com/${{matrix.SOURCE}}.git
-      #源码分支
-      WRT_BRANCH: ${{matrix.BRANCH}}
-      #源码名称
-      WRT_SOURCE: ${{matrix.SOURCE}}
-      # #插件调整
-      # WRT_PACKAGE: ${{inputs.PACKAGE}}
-      #默认root密码
-      WRT_PW: ""
-      #默认WIFI名称
+      WRT_PW: ''
       WRT_SSID: Openwrt
-      #默认WIFI密码
-      WRT_WORD: 12345678
+      WRT_WORD: '12345678'

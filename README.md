@@ -1,74 +1,45 @@
-# OpenWrt 固件持续集成 (CI/CD) 构建系统
-个人自用
+# ImmortalWrt 固件构建
 
-[![构建状态](https://img.shields.io/github/actions/workflow/status/Jiale23/Openwrt-CI/AutoBuild.yml?branch=main&label=构建状态)](https://github.com/Jiale23/Openwrt-CI/actions)
-[![GitHub 最后提交](https://img.shields.io/github/last-commit/Jiale23/Openwrt-CI?label=最后更新)](https://github.com/Jiale23/Openwrt-CI/commits/main)
+用 GitHub Actions 自动编译自用的 ImmortalWrt 固件。目前支持 **x86-64** 和 **Cudy TR3000 v1**，每次构建都会查找 ImmortalWrt 最新的正式稳定版。
 
-## 📌 简介
+## 构建方式
 
-本项目旨在通过自动化流程，编译OpenWrt 固件。利用 GitHub Actions，可以在每次推送代码或按计划自动构建最新固件，无需本地环境，节省时间和资源。
+仓库代码更新时，以及每天北京时间 **06:00**，工作流会自动构建两个平台的固件，默认内置 Nikki。
 
-## 🎯 特性
+也可以手动构建：
 
-*   **自动化构建**: 基于 Git 提交或定时任务自动触发 OpenWrt 固件构建。
-*   **配置灵活**: 通过版本控制管理 `.config` 配置文件和 `feeds.conf`，轻松复现和共享构建环境。
-*   **多设备支持**: 可配置为同时或分别构建适用于不同硬件平台的固件。
-*   **构建缓存**: 利用 CI 的缓存机制加速后续构建过程。
-*   **构建日志**: 完整的在线构建日志，便于排查问题。
+1. 打开仓库的 **Actions** 页面，选择 **AutoBuild**。
+2. 点击 **Run workflow**，根据需要调整选项：
+   - **PROXY**：选择 `nikki`、`openclash` 或 `momo`，默认为 `nikki`。每次只编译选中的一个。
+   - **CONFIG_ONLY**：打开后只检查配置，不编译固件。升级源码或调整配置后，可以先用它检查。
+   - **PACKAGE**：可选的额外编译配置，每行填写一项，例如 `CONFIG_PACKAGE_htop=y`。
+3. 点击 **Run workflow** 启动。构建完成后，在该次运行页面的 **Artifacts** 中下载文件。
 
-## 🛠️ 准备工作
+每个平台都会生成一份 `buildinfo`，包含实际使用的版本、源码信息和最终编译配置。完整构建还会生成一份 `firmware`，其中包含固件和校验文件。
 
-*   **利用本仓库作为模板**: 点击仓库页面右上角的 "Use this template" 按钮，创建您自己的副本。
+完整构建会使用编译缓存，两个平台分别保存。首次构建需要建立缓存，之后重复构建时有机会更快。
 
-## 🚀 使用方法
+## 自定义设置
 
-### 1. 自定义配置
+| 想修改的内容 | 文件 |
+| --- | --- |
+| 编译平台、默认主题、主机名、管理地址和 Wi-Fi 名称等 | `.github/workflows/AutoBuild.yml` |
+| 所有平台共用的软件包和功能 | `Config/General.txt` |
+| x86-64 平台配置 | `Config/X86_64.txt` |
+| Cudy TR3000 v1 平台配置 | `Config/MediaTek_Mt798X.txt` |
+| 额外软件包来源 | `Scripts/Packages.sh` |
 
-*   **修改 OpenWrt 源码和版本**:
-    *   编辑 `.github/workflows/AutoBuild.yml` 文件中的 `SOURCE` 和 `BRANCH` 变量，指向您想要构建的 OpenWrt 源码仓库和分支。
-*   **配置固件选项**:
-    *   将您编译好的 `.config` 文件替换仓库根目录下的 `Config/General.txt` 文件。您可以使用 `make menuconfig` 在本地生成，或者从现有固件提取。
-<!-- *   **配置软件包源 (Feeds)**:
-    *   修改 `feeds.conf.default` 文件以添加或修改软件包源。如果需要使用自定义的 feeds 配置文件，请确保在构建脚本中正确引用它。 -->
+手动填写的 `PACKAGE` 可以调整额外配置，但代理插件仍以 `PROXY` 的选择为准。
 
-### 2. 启动构建
+## 版本与产物
 
-<!-- *   **自动触发**: 推送 (`git push`) 更改到 `main` 分支，或者创建一个 Pull Request。 -->
-*   **手动触发**: 在您的 GitHub 仓库页面，转到 `Actions` 选项卡，选择 `Build OpenWrt` 工作流，然后点击 `Run workflow` 按钮。
-*   **定时触发**: 可以配置工作流以按计划（例如，每天凌晨）自动运行。
+系统源码跟随 ImmortalWrt 最新正式稳定版，不使用 snapshot。每次构建开始时会确定系统版本和插件源码版本，两个平台使用同一批版本；版本无法确认时，构建会直接失败。第三方插件继续跟随各自配置的上游分支，因此插件更新节奏可能与系统不同。
 
-### 3. 获取固件
+工作流会清理超过 **30 天**的已完成运行记录；对应的 Actions 构建产物也会随记录删除。如需长期保留固件，请及时下载。清理任务不会删除仓库的 Release 或 tag。
 
-*   构建成功后，固件会自动上传到仓库的 [Actions](https://github.com/Jiale23/Openwrt-CI/actions) 页面。
-*   您可以在对应的构建运行日志中找到详细的构建信息和产物列表。
+## 刷机前请注意
 
-## 📁 项目结构
-
-*   `.github/workflows/AutoBuild.yml`: 主构建触发工作流文件。
-*   `.github/workflows/OpenWrt-CI.yml`: 核心的可重用 OpenWrt 构建工作流。
-*   `.github/workflows/AutoClean.yml`: 触发此构建的清理工作流（需存在）。
-*   `configs/` 根目录下的 `.config` 文件
-*   `README.md`: 本说明文件。
-
-## 🧰 可配置参数 (在 `.github/workflows/AutoBuild.yml` 中传递给 `OpenWrt-CI.yml`)
-
-| 参数名 (Key)     | 描述                                     | 示例值                 |
-| :--------------- | :--------------------------------------- | :--------------------- |
-| `WRT_CONFIG`     | 要构建的设备配置名称 (对应 matrix CONFIG) | `X86_64`               |
-| `WRT_THEME`      | 默认 LuCI 主题                           | `argon`                |
-| `WRT_NAME`       | 默认主机名                               | `Openwrt`              |
-| `WRT_IP`         | 默认 LAN IP 地址                         | `192.168.31.1`         |
-| `WRT_REPO`       | OpenWrt 源码仓库地址 (由 matrix SOURCE 构建) | `https://github.com/openwrt/openwrt.git` |
-| `WRT_BRANCH`     | OpenWrt 源码分支 (对应 matrix BRANCH)    | `openwrt-24.10`        |
-| `WRT_SOURCE`     | OpenWrt 源码仓库路径 (对应 matrix SOURCE) | `openwrt/openwrt`      |
-| `WRT_PW`         | 默认 root 密码提示信息                   | `无`                   |
-| `WRT_SSID`       | 默认 WiFi SSID                           | `Openwrt`              |
-| `WRT_WORD`       | 默认 WiFi 密码                           | `12345678`             |
-
-
-## ⚠️ 免责声明
-
-*   本项目仅供学习和研究使用。
-*   固件构建过程可能因网络、配置或源码问题而失败。
-*   请在刷写固件前务必备份原始固件，并了解相关风险。
-*   作者不对因使用此固件而导致的任何设备损坏负责。
+- 这是自定义固件，编译成功不代表已经通过设备实测。刷机前请确认设备型号、备份原配置，并了解恢复方式。
+- TR3000 v1 固件包含大分区修改，使用前请确认设备的实际闪存布局和刷机方式适用。
+- TR3000 的 Wi-Fi 初始化依赖设备生成的无线配置；如果无法识别频段或接口，脚本会跳过设置。保留配置升级时，也不一定会重新应用默认 Wi-Fi 设置。
+- 默认 Wi-Fi 密码会打包进固件。公开分享固件前，请检查并修改默认设置。

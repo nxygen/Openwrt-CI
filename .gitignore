@@ -3,10 +3,19 @@ CMakeCache.txt
 CMakeFiles
 CMakeScripts
 Testing
-Makefile
+/Makefile
 cmake_install.cmake
 install_manifest.txt
 compile_commands.json
 CTestTestfile.cmake
 _deps
 CMakeUserPresets.json
+
+# Python 本地测试缓存和虚拟环境
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# 工作流检出的源码和生成的固件（也可能是指向构建目录的符号链接）
+/openwrt

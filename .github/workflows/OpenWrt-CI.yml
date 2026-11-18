@@ -1,72 +1,46 @@
 name: OpenWrt-CI
 
 on:
-  workflow_dispatch: 
   workflow_call:
     inputs:
-      WRT_CONFIG:
-        required: true
-        type: string
-      WRT_THEME:
-        required: true
-        type: string
-      WRT_NAME:
-        required: true
-        type: string
-      WRT_IP:
-        required: true
-        type: string
-      WRT_REPO:
-        required: true
-        type: string
-      WRT_BRANCH:
-        required: true
-        type: string
-      WRT_SOURCE:
-        required: false
-        type: string
-      WRT_PACKAGE:
-        required: false
-        type: string
-      WRT_SSID:
-        required: true
-        type: string
-      WRT_WORD:
-        required: true
-        type: string
-      WRT_PW:
-        required: false
-        type: string
-      WRT_TEST:
-        required: false
-        type: string
-
-permissions: write-all
+      WRT_CONFIG: {required: true, type: string}
+      WRT_LOCK: {required: true, type: string}
+      WRT_PROXY: {required: true, type: string}
+      WRT_TEST: {required: true, type: boolean}
+      WRT_PACKAGE: {required: false, type: string}
+      WRT_THEME: {required: true, type: string}
+      WRT_NAME: {required: true, type: string}
+      WRT_IP: {required: true, type: string}
+      WRT_SSID: {required: true, type: string}
+      WRT_WORD: {required: true, type: string}
+      WRT_PW: {required: false, type: string}
+permissions:
+  contents: read
 
 env:
-  GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
-  WRT_CONFIG: ${{inputs.WRT_CONFIG}}
-  WRT_THEME: ${{inputs.WRT_THEME}}
-  WRT_NAME: ${{inputs.WRT_NAME}}
-  WRT_SSID: ${{inputs.WRT_SSID}}
-  WRT_WORD: ${{inputs.WRT_WORD}}
-  WRT_IP: ${{inputs.WRT_IP}}
-  WRT_PW: ${{inputs.WRT_PW}}
-  WRT_REPO: ${{inputs.WRT_REPO}}
-  WRT_BRANCH: ${{inputs.WRT_BRANCH}}
-  WRT_PACKAGE: ${{inputs.WRT_PACKAGE}}
-  WRT_TEST: ${{inputs.WRT_TEST}}
-
+  WRT_CONFIG: ${{ inputs.WRT_CONFIG }}
+  WRT_LOCK: ${{ inputs.WRT_LOCK }}
+  WRT_PROXY: ${{ inputs.WRT_PROXY }}
+  WRT_PACKAGE: ${{ inputs.WRT_PACKAGE }}
+  WRT_THEME: ${{ inputs.WRT_THEME }}
+  WRT_NAME: ${{ inputs.WRT_NAME }}
+  WRT_IP: ${{ inputs.WRT_IP }}
+  WRT_SSID: ${{ inputs.WRT_SSID }}
+  WRT_WORD: ${{ inputs.WRT_WORD }}
+  WRT_PW: ${{ inputs.WRT_PW }}
+  CCACHE_MAXSIZE: 1G
 jobs:
   build_openwrt:
-    name: Build OpenWrt Firmware #编译OpenWrt固件
-    runs-on: ubuntu-latest
-
+    name: ${{ inputs.WRT_CONFIG }} · ${{ inputs.WRT_PROXY }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
     steps:
-      - name: Checkout #拉取仓库
-        uses: actions/checkout@master
+      - name: Checkout build configuration
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
 
-      - name: Install build dependencies #安装编译依赖
+      - name: Install build dependencies
         timeout-minutes: 20
         env:
           DEBIAN_FRONTEND: noninteractive
@@ -83,113 +57,186 @@ jobs:
             python3-dev python3-pip python3-ply python3-pyelftools qemu-utils \
             rsync scons squashfs-tools subversion swig unzip wget xxd \
             zlib1g-dev zstd
-          sudo timedatectl set-timezone Asia/Shanghai
-
-      - name: Prepare build workspace #准备编译环境
-        timeout-minutes: 5
+      - name: Prepare workspace and check out locked release
         run: |
-          echo "==> Preparing build workspace"
-          sudo chmod +x $GITHUB_WORKSPACE/Scripts/Packages.sh
-          sudo chmod +x $GITHUB_WORKSPACE/Scripts/Settings.sh
-          sudo chmod +x $GITHUB_WORKSPACE/Scripts/Handles.sh
-          
+          set -euo pipefail
           sudo mkdir -p /mnt/build_wrt
-          sudo chown $USER:$USER /mnt/build_wrt
-          sudo ln -s /mnt/build_wrt $GITHUB_WORKSPACE/openwrt
-          echo "==> Build workspace ready"
+          sudo chown "$USER:$USER" /mnt/build_wrt
+          ln -s /mnt/build_wrt "$GITHUB_WORKSPACE/openwrt"
+          tag=$(python3 -c 'import json,os; print(json.loads(os.environ["WRT_LOCK"])["tag"])')
+          commit=$(python3 -c 'import json,os; print(json.loads(os.environ["WRT_LOCK"])["commit"])')
+          echo "Checking out $tag ($commit)"
+          git clone --depth=1 --branch "$tag" https://github.com/immortalwrt/immortalwrt.git openwrt/
+          actual=$(git -C openwrt rev-parse HEAD)
+          if [ "$actual" != "$commit" ]; then
+            echo "::error::Release commit mismatch: expected $commit, got $actual"
+            exit 1
+          fi
+          echo "WRT_DATE=$(TZ=Asia/Shanghai date +'%y.%m.%d-%H.%M.%S')" >> "$GITHUB_ENV"
 
-      - name: Clone Repo #克隆仓库
+      - name: Verify and install official feeds
         run: |
-          git clone --single-branch --branch $WRT_BRANCH $WRT_REPO ./openwrt/
-
-      - name: Initialize Variables #初始化变量
-        run: |
-          echo "WRT_DATE=$(TZ=UTC-8 date +"%y.%m.%d-%H.%M.%S")" >> $GITHUB_ENV
-
-      - name: Update feeds #更新feeds
-        run: |
+          set -euo pipefail
+          python3 -c 'import sys; sys.path.insert(0,"Scripts"); from verify_feeds import parse_feeds; parse_feeds(open("openwrt/feeds.conf.default").read())'
           cd openwrt
           ./scripts/feeds update -a
+          python3 "$GITHUB_WORKSPACE/Scripts/verify_feeds.py" .
           ./scripts/feeds install -a
+      - name: Apply TR3000 device patch
+        if: ${{ inputs.WRT_CONFIG == 'MediaTek_Mt798X' }}
+        run: |
+          set -euo pipefail
+          patch="$GITHUB_WORKSPACE/patches/100-tr3000-large-ubi.patch"
+          git -C openwrt apply --check "$patch"
+          git -C openwrt apply "$patch"
+          grep -Fq 'reg = <0x5c0000 0x7240000>;' openwrt/target/linux/mediatek/dts/mt7981b-cudy-tr3000-v1.dts
 
-      - name: Custom Packages #自定义包&处理文件
-        run: | #临时方案 更换大分区DTS
-
-          rm openwrt/target/linux/mediatek/dts/mt7981b-cudy-tr3000-v1.dts
-          cp -r $GITHUB_WORKSPACE/dts/* openwrt/target/linux/mediatek/dts/
-
+      - name: Add locked custom packages
+        run: |
+          set -euo pipefail
           cd openwrt/package
-          
-          $GITHUB_WORKSPACE/Scripts/Packages.sh
-          $GITHUB_WORKSPACE/Scripts/Handles.sh
-          cp -r $GITHUB_WORKSPACE/files ./
-          
-          #变量注入
-          sed -i "s/__SSID__/$WRT_SSID/g" ./files/etc/uci-defaults/99-custom
-          sed -i "s/__PASSWORD__/$WRT_WORD/g" ./files/etc/uci-defaults/99-custom
-          sed -i "s/__ROOT_PASSWORD__/$WRT_PW/g" ./files/etc/uci-defaults/99-custom
+          bash "$GITHUB_WORKSPACE/Scripts/Packages.sh"
+          bash "$GITHUB_WORKSPACE/Scripts/Handles.sh"
 
-      - name: Generate configuration file #生成配置文件
+      - name: Prepare first-boot files
         run: |
+          set -euo pipefail
           cd openwrt
-          
-          cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt $GITHUB_WORKSPACE/Config/General.txt >> .config
-          
-          $GITHUB_WORKSPACE/Scripts/Settings.sh
-          make defconfig -j$(nproc)
-          
-      - name: Download packages #下载软件包
-        run: |
-          cd openwrt
-          make download -j$(nproc)
-      
-      - name: Compile firmware #编译固件
-        run: |
-          cd openwrt
+          mkdir -p files
+          cp -a "$GITHUB_WORKSPACE/files/." files/
+          if [ "$WRT_CONFIG" != MediaTek_Mt798X ]; then
+            rm -f files/etc/uci-defaults/98-tr3000-wifi
+          fi
+          python3 "$GITHUB_WORKSPACE/Scripts/prepare_overlay.py" files
 
-          make -j$(nproc) || make -j1 V=s
-          echo "======================="
-          echo "Space usage:"
-          echo "======================="
-          df -h
-          echo "======================="
-          du -h --max-depth=1 ./ --exclude=build_dir --exclude=bin
-          du -h --max-depth=1 ./build_dir
-          du -h --max-depth=1 ./bin
-
-      - name: Prepare artifact #准备产物
+      - name: Generate and verify configuration
         run: |
+          set -euo pipefail
           cd openwrt
-          mkdir -p ./artifact/package ./artifact/buildinfo
-          
-          find ./bin/targets/ -type d -name "packages" -exec rm -rf {} + || true
-          
-          APK_FILES=$(find ./bin/packages/ ./bin/targets/ -type f -name "*.apk" 2>/dev/null)
-          if [ -n "$APK_FILES" ]; then
-              echo "$APK_FILES" | xargs cp -rf -t ./artifact/package/
+          cat "$GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt" "$GITHUB_WORKSPACE/Config/General.txt" > .config
+          bash "$GITHUB_WORKSPACE/Scripts/Settings.sh"
+          # Make the CI cache choice authoritative over optional package settings.
+          sed -i '/^CONFIG_DEVEL=/d; /^# CONFIG_DEVEL is not set$/d; /^CONFIG_CCACHE=/d; /^# CONFIG_CCACHE is not set$/d; /^CONFIG_CCACHE_DIR=/d' .config
+          printf '%s\n' 'CONFIG_DEVEL=y' 'CONFIG_CCACHE=y' 'CONFIG_CCACHE_DIR=""' >> .config
+          make defconfig -j"$(nproc)"
+          grep -qx 'CONFIG_CCACHE=y' .config || { echo "::error::Compiler cache was not enabled by defconfig"; exit 1; }
+          case "$WRT_CONFIG" in
+            MediaTek_Mt798X) target=CONFIG_TARGET_mediatek_filogic_DEVICE_cudy_tr3000-v1 ;;
+            X86_64) target=CONFIG_TARGET_x86_64 ;;
+            *) echo "Unsupported target config: $WRT_CONFIG" >&2; exit 1 ;;
+          esac
+          grep -qx "$target=y" .config || { echo "Requested target is unavailable: $target" >&2; exit 1; }
+          for proxy in nikki openclash momo; do
+            if [ "$proxy" = "$WRT_PROXY" ]; then
+              grep -qx "CONFIG_PACKAGE_luci-app-$proxy=y" .config || { echo "Selected proxy package is unavailable: $proxy" >&2; exit 1; }
+            elif grep -qx "CONFIG_PACKAGE_luci-app-$proxy=y" .config; then
+              echo "Unexpected proxy package: $proxy" >&2; exit 1
+            fi
+          done
+          mkdir -p artifact/buildinfo
+          cp .config artifact/buildinfo/config.txt
+          cp feeds.conf.default artifact/buildinfo/feeds.conf.default
+          printf '%s\n' "$WRT_LOCK" | python3 -m json.tool > artifact/buildinfo/sources.json
+          python3 "$GITHUB_WORKSPACE/Scripts/verify_feeds.py" . > artifact/buildinfo/feeds.txt
+          printf '%s\n' 'Custom build with third-party packages and modifications; not an official or byte-reproducible image.' > artifact/buildinfo/README.txt
+      - name: Upload configuration and version manifest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ inputs.WRT_CONFIG }}_buildinfo
+          path: openwrt/artifact/buildinfo/
+          if-no-files-found: error
+
+      - name: Summarize configuration
+        env:
+          CONFIG_ONLY: ${{ inputs.WRT_TEST }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          lock = json.loads(os.environ["WRT_LOCK"])
+          mode = "Configuration check" if os.environ["CONFIG_ONLY"] == "true" else "Full build"
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("## OpenWrt build\n\n")
+              for label, value in (
+                  ("Target", os.environ["WRT_CONFIG"]),
+                  ("Mode", mode),
+                  ("Stable release", lock["tag"]),
+                  ("Source commit", lock["commit"]),
+                  ("Proxy", os.environ["WRT_PROXY"]),
+              ):
+                  summary.write(f"- **{label}:** `{value}`\n")
+              summary.write("\nSee the buildinfo artifact for the complete source and feed manifest.\n")
+          PY
+
+      - name: Download packages
+        if: ${{ !inputs.WRT_TEST }}
+        run: cd openwrt && make download -j"$(nproc)"
+
+      - name: Restore compiler cache
+        if: ${{ !inputs.WRT_TEST }}
+        id: ccache
+        continue-on-error: true
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684
+        with:
+          path: /mnt/build_wrt/.ccache
+          key: ccache-v1-${{ runner.os }}-${{ inputs.WRT_CONFIG }}-${{ fromJSON(inputs.WRT_LOCK).commit }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ccache-v1-${{ runner.os }}-${{ inputs.WRT_CONFIG }}-${{ fromJSON(inputs.WRT_LOCK).commit }}-
+            ccache-v1-${{ runner.os }}-${{ inputs.WRT_CONFIG }}-
+
+      - name: Compile firmware
+        if: ${{ !inputs.WRT_TEST }}
+        run: |
+          set -euo pipefail
+          cd openwrt
+          if ! make -j"$(nproc)"; then
+            echo "::warning::Parallel build failed; retrying serially with verbose output."
+            make -j1 V=s
+          fi
+
+      - name: Report compiler cache statistics
+        if: ${{ !inputs.WRT_TEST }}
+        run: |
+          if [ -x openwrt/staging_dir/host/bin/ccache ]; then
+            CCACHE_DIR=/mnt/build_wrt/.ccache openwrt/staging_dir/host/bin/ccache --show-stats || true
           else
-              echo "Warning: No APK files found! Check if the build was successful."
-          fi
-        
-          INFO_FILES=$(find ./bin/targets/ -type f \( -name "*.buildinfo" -o -name "*.manifest" -o -name "*.index*" \) 2>/dev/null)
-          if [ -n "$INFO_FILES" ]; then
-              echo "$INFO_FILES" | xargs cp -rf -t ./artifact/buildinfo/
+            echo "::warning::OpenWrt ccache executable was not found."
           fi
 
-      - name: Upload buildinfo
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ inputs.WRT_CONFIG }}_OpenWrt_buildinfo
-          path: ./openwrt/artifact/buildinfo/
+      - name: Verify firmware images and generate checksums
+        if: ${{ !inputs.WRT_TEST }}
+        run: |
+          set -euo pipefail
+          cd openwrt/bin/targets
+          case "$WRT_CONFIG" in
+            X86_64) pattern='*x86-64-generic-ext4-combined*.img*' ;;
+            MediaTek_Mt798X) pattern='*cudy_tr3000-v1*sysupgrade.bin' ;;
+            *) echo "::error::Unsupported target: $WRT_CONFIG"; exit 1 ;;
+          esac
+          if ! find . -type f -name "$pattern" -size +0c -print -quit | grep -q .; then
+            echo "::error::No nonempty firmware image found matching $pattern"
+            exit 1
+          fi
+          find . -type f ! -path '*/packages/*' ! -name SHA256SUMS-custom -print0 | sort -z | xargs -0 -r sha256sum > SHA256SUMS-custom
+          sha256sum --check SHA256SUMS-custom
 
-      - name: Upload package
-        uses: actions/upload-artifact@v4
+      - name: Save compiler cache
+        if: ${{ !inputs.WRT_TEST }}
+        continue-on-error: true
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684
         with:
-          name: ${{ inputs.WRT_CONFIG }}_OpenWrt_package
-          path: ./openwrt/artifact/package/
+          path: /mnt/build_wrt/.ccache
+          key: ccache-v1-${{ runner.os }}-${{ inputs.WRT_CONFIG }}-${{ fromJSON(inputs.WRT_LOCK).commit }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Upload firmware
-        uses: actions/upload-artifact@v4
+        if: ${{ !inputs.WRT_TEST }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: ${{ inputs.WRT_CONFIG }}_OpenWrt_firmware
-          path: ./openwrt/bin/targets/
+          name: ${{ inputs.WRT_CONFIG }}_firmware
+          path: |
+            openwrt/bin/targets/
+            !openwrt/bin/targets/**/packages/**
+          if-no-files-found: error
+
+      - name: Report disk usage on failure
+        if: ${{ failure() }}
+        run: df -h

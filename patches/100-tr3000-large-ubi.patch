@@ -1,0 +1,9 @@
+--- a/target/linux/mediatek/dts/mt7981b-cudy-tr3000-v1.dts
++++ b/target/linux/mediatek/dts/mt7981b-cudy-tr3000-v1.dts
+@@ -20,5 +20,5 @@
+ 	mediatek,bmt-max-reserved-blocks = <64>;
+ };
+ &ubi {
+-	reg = <0x5c0000 0x4000000>;
++	reg = <0x5c0000 0x7240000>;
+ };
