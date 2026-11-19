@@ -2,7 +2,7 @@ name: AutoBuild
 on:
   push:
   schedule:
-    - cron: '0 22 * * *'
+    - cron: '17 20 * * 6' # 北京时间周日 04:17；下方控制为每两周一次
   workflow_dispatch:
     inputs:
       TARGET:
@@ -29,7 +29,30 @@ on:
 permissions:
   contents: read
 jobs:
+  schedule_gate:
+    name: Check build schedule
+    runs-on: ubuntu-24.04
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+    steps:
+      - id: check
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != schedule ]; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # 2026-11-22 04:17 Beijing is the first scheduled build.
+          anchor_day=$(( $(date -u -d '2026-11-21 00:00:00' +%s) / 86400 ))
+          current_day=$(( $(date -u +%s) / 86400 ))
+          if (( current_day >= anchor_day && ((current_day - anchor_day) / 7) % 2 == 0 )); then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping this week's scheduled build."
+          fi
   resolve:
+    needs: schedule_gate
+    if: ${{ needs.schedule_gate.outputs.should_build == 'true' }}
     runs-on: ubuntu-24.04
     outputs:
       lock: ${{ steps.sources.outputs.lock }}
